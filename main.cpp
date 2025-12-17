@@ -1,4 +1,5 @@
 #include <vector>
+#include <deque>
 #include <iostream>
 #include <random>
 #include <chrono> //for seeding PRNGs
@@ -85,6 +86,7 @@ const double POPULATION_VANCOUVER (2.64e6); //scientific notation, 2.64e6 = 2.64
 const double POPULATION_SECHELT (1.0e4); //i want the extra precision of a double for these big numbers.
 const double POPULATION_GIBSONS (5.0e3);
 const double POPULATION_ROBERTSCREEK (3.0e3);
+char bike_path ('n'); //3 values: n for "none," r for "only to robert's creek," and s for "all the way to sechelt"
 
 /*
     Randomness setup
@@ -102,7 +104,7 @@ const double POPULATION_ROBERTSCREEK (3.0e3);
 */
 auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 std::mt19937 randomizer;
-std::poisson_distribution n_days(3.3); //the average trip length is 3.3 nights
+std::poisson_distribution<> n_days(3.3); //the average trip length is 3.3 nights
 std::bernoulli_distribution takes_trip_peak(0.0025 * MODEL_SCALE); //chance per day the agent wants to take a trip to the sunshine coast
 std::bernoulli_distribution takes_trip_nonpeak(0.00042 * MODEL_SCALE); //see above for explanation of magic numbers
 /*
@@ -125,6 +127,22 @@ void getTripLengths(std::vector<Agent>& world, std::vector<int>& trip_lengths, b
             trip_lengths[i] = takes_trip_nonpeak(randomizer) * n_days(randomizer);
         }
     } //no else statement because if they are already on vacation we don't want to fuck with that
+}
+/*
+    Where will each Agent go on vacation?
+*/
+std::uniform_int_distribution<> dis(0, 2);
+void getDestinations(std::vector<Agent>& world, std::vector<char>& destinations) {
+    for (int i (0); i < world.size(); ++i) {
+        if (world[i].getHome() == 'v') {
+            if (dis(randomizer) == 0) destinations[i] = 'g';
+            else if (dis(randomizer) == 1) destinations[i] = 'r';
+            else destinations[i] = 's';
+        }
+        else {
+            destinations[i] = 'v';
+        }
+    }
 }
 
 int main() {
@@ -162,6 +180,10 @@ int main() {
         j += 1;
     }
     j = 0.0; //so we can use it again later. Efficiency!
+
+    std::vector<int> trip_lengths (british_columbia.size()); //declare a vector of trip lenghts the same size as the british columbia vector
+    std::vector<char> destinations (british_columbia.size());
+    bool peak_season (false);
     /*
         Now some agents are willing to bike, this is a user-defined variable. I assume 1% of people
         are die-hard cyclists willing to bike from Vancouver to the Sunshine Coast even absent a bike lane.
@@ -210,22 +232,112 @@ int main() {
     }
 
     /*
-        Define ferry queues. These are all vector<int> so we can work with indices rather than
-        directly with agents, which are more computationally costly
+        Define ferry queues. These are all deque<int> so we can work with indices rather than
+        directly with agents, which are more computationally costly; and so we have easy insertion
+        and deletion at both ends of the queue
     */
-    std::vector<int> ferry_cvg; //car, vancouver to gibsons
-    std::vector<int> ferry_bvg; //bike, vancouver to gibsons
-    std::vector<int> ferry_cgv; //car, gibsons to vancouver
-    std::vector<int> ferry_bgv; //bike, gibsons to vancouver
+    std::deque<int> ferry_cvg; //car, vancouver to gibsons
+    std::deque<int> ferry_bvg; //bike, vancouver to gibsons
+    std::deque<int> ferry_cgv; //car, gibsons to vancouver
+    std::deque<int> ferry_bgv; //bike, gibsons to vancouver
 
     int t_max = 365;
+    getDestinations(british_columbia, destinations);
 
     for (int t (0); t < t_max; ++t) { //main loop for the days of the year
+        if (t >= 151 && t <= 243) peak_season = true;
+        else peak_season = false;
         // logic for putting agents in ferries goes here
+        getTripLengths(british_columbia, trip_lengths, peak_season);
+        for (int k (0); k < british_columbia.size(); ++k) {
+            if (!british_columbia[k].isOnVacation() && trip_lengths[k] > 0) { //go on vacation
+                /*
+                    The code below checks a bunch of possible cases. I don't know a good way of simplifying it, and
+                    this is definitely going to be a computational bottleneck. This is what we call "evil physics student code."
+                */
+                if (destinations[k] != 'v' && british_columbia[k].willBike() == 'y') {
+                    ferry_bvg.push_back(k);
+                }
+                else if (destinations[k] != 'v' && british_columbia[k].willBike() == 'n') {
+                    ferry_cvg.push_back(k);
+                }
+                else if (destinations[k] != 'v' && british_columbia[k].willBike() == 'p' && (destinations[k] == bike_path)) {
+                    ferry_bvg.push_back(k);
+                }
+                else if (destinations[k] != 'v' && british_columbia[k].willBike() == 'p' && (destinations[k] != bike_path)) {
+                    ferry_cvg.push_back(k);
+                }
+                else if (destinations[k] == 'v' && british_columbia[k].willBike() == 'n') {
+                    ferry_cgv.push_back(k);
+                }
+                else if (destinations[k] == 'v' && british_columbia[k].willBike() == 'y') {
+                    ferry_bgv.push_back(k);
+                }
+                else if (destinations[k] == 'v' && british_columbia[k].willBike() == 'p' && british_columbia[k].getHome() == 'g') {
+                    ferry_bgv.push_back(k);
+                }
+                else if (destinations[k] == 'v' && british_columbia[k].willBike() == 'p' &&
+                    (british_columbia[k].getHome() == bike_path || (bike_path == 's' && british_columbia[k].getHome() == 'r'))) {
+                    ferry_bgv.push_back(k);
+                }
+                else {
+                    ferry_cgv.push_back(k);
+                }
+            }
+            else if (british_columbia[k].isOnVacation() && trip_lengths[k] == 0) { //return home
+                if (british_columbia[k].getLocation() == 'v' && british_columbia[k].willBike() == 'y') {
+                    ferry_bvg.push_back(k);
+                }
+                else if (british_columbia[k].getLocation() == 'v' && british_columbia[k].willBike() == 'n') {
+                    ferry_cvg.push_back(k);
+                }
+                else if (british_columbia[k].getLocation() == 'v' && british_columbia[k].willBike() == 'p'
+                    && british_columbia[k].getHome() == bike_path) {
+                        ferry_bvg.push_back(k); //decide to bike
+                }
+                else if (british_columbia[k].getLocation() == 'v' && british_columbia[k].willBike() == 'p'
+                    && british_columbia[k].getHome() != bike_path) {
+                        ferry_cvg.push_back(k); //decide not to bike
+                    }
+                else if (british_columbia[k].getLocation() != 'v' && british_columbia[k].willBike() == 'y') {
+                    ferry_bgv.push_back(k);
+                }
+                else if (british_columbia[k].getLocation() != 'v' && british_columbia[k].willBike() == 'n') {
+                    ferry_cgv.push_back(k);
+                }
+                else if (british_columbia[k].getLocation() == 's' && british_columbia[k].willBike() == 'p'
+                    && bike_path == 's') {
+                        ferry_bgv.push_back(k);
+                    }
+                else if ((british_columbia[k].getLocation() == 'r' || british_columbia[k].getLocation() == 'g')
+                    && british_columbia[k].willBike() == 'p' && bike_path != 'n') {
+                        ferry_bgv.push_back(k);
+                    }
+                else { //hopefully we do not need this
+                    std::cout << "You're missing a case. Failed to classify the agent with the following characteristics:" <<std::endl;
+                    std::cout << "Location: " << british_columbia[k].getLocation() << std::endl;
+                    std::cout << "Willingness to Bike: " << british_columbia[k].willBike() << std::endl;
+                    std::cout << "Home: " << british_columbia[k].getHome() << std::endl;
+                }
+            }
+            else if (british_columbia[k].isOnVacation() && trip_lengths[k] > 0) {
+                --trip_lengths[k]; //one vacation day over
+            }
+        }
+        /*
+        TODO: This logic does not work because the ferry can be underbooked. Need to fix it to handle underbooked ferries,
+        especially because this is something I expect to happen for the bike ferry.
+        */
         for (int i (0); i < FERRIES_PER_DAY; ++i) { //loop for each ferry trip
-
+            for (int m (0); m < BIKES_PER_FERRY; ++m) {
+                british_columbia[ferry_bvg[m]].setLocation(destinations[ferry_bvg[m]]);
+                british_columbia[ferry_bgv[m]].setLocation(destinations[ferry_bgv[m]]);
+            }
+            ferry_bvg.erase(ferry_bvg.begin(), ferry_bvg.begin() + BIKES_PER_FERRY);
+            ferry_bgv.erase(ferry_bgv.begin(), ferry_bgv.begin() + BIKES_PER_FERRY);
+            for (int n (0); n < CARS_PER_FERRY; ++n) {
+            }
         }
     }
-
     return 0;
 }
