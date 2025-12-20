@@ -2,6 +2,7 @@
 #include <deque>
 #include <iostream>
 #include <random>
+#include <algorithm>
 #include <chrono> //for seeding PRNGs
 /*
     __STRUCTURE OF THE ALGORITHM__
@@ -241,10 +242,16 @@ int main() {
     std::deque<int> ferry_cgv; //car, gibsons to vancouver
     std::deque<int> ferry_bgv; //bike, gibsons to vancouver
 
+    int passengers_cvg (0);
+    int passengers_bgv (0);
+    int passengers_cgv (0);
+    int passengers_bvg (0);
+
     int t_max = 365;
     getDestinations(british_columbia, destinations);
 
     for (int t (0); t < t_max; ++t) { //main loop for the days of the year
+        std::cout << "This is day " <<  t << std::endl;
         if (t >= 151 && t <= 243) peak_season = true;
         else peak_season = false;
         // logic for putting agents in ferries goes here
@@ -309,6 +316,10 @@ int main() {
                     && bike_path == 's') {
                         ferry_bgv.push_back(k);
                     }
+                else if (british_columbia[k].getLocation() == 's' && british_columbia[k].willBike() == 'p'
+                    && bike_path != 's') {
+                        ferry_cgv.push_back(k);
+                    }
                 else if ((british_columbia[k].getLocation() == 'r' || british_columbia[k].getLocation() == 'g')
                     && british_columbia[k].willBike() == 'p' && bike_path != 'n') {
                         ferry_bgv.push_back(k);
@@ -325,18 +336,23 @@ int main() {
             }
         }
         /*
-        TODO: This logic does not work because the ferry can be underbooked. Need to fix it to handle underbooked ferries,
-        especially because this is something I expect to happen for the bike ferry.
+            This is ugly and slow but deals with the problem of the ferry being underbooked. I am sure there is a faster and better way
+            of doing this, but I do not know what it is right now.
         */
-        for (int i (0); i < FERRIES_PER_DAY; ++i) { //loop for each ferry trip
-            for (int m (0); m < BIKES_PER_FERRY; ++m) {
-                british_columbia[ferry_bvg[m]].setLocation(destinations[ferry_bvg[m]]);
-                british_columbia[ferry_bgv[m]].setLocation(destinations[ferry_bgv[m]]);
-            }
-            ferry_bvg.erase(ferry_bvg.begin(), ferry_bvg.begin() + BIKES_PER_FERRY);
-            ferry_bgv.erase(ferry_bgv.begin(), ferry_bgv.begin() + BIKES_PER_FERRY);
-            for (int n (0); n < CARS_PER_FERRY; ++n) {
-            }
+        for (int i (0); i < FERRIES_PER_DAY; ++i) {
+            passengers_bvg = std::min(BIKES_PER_FERRY, (int) ferry_bvg.size());
+            passengers_bgv = std::min(BIKES_PER_FERRY, (int) ferry_bgv.size());
+            passengers_cgv = std::min(CARS_PER_FERRY, (int) ferry_cgv.size());
+            passengers_cvg = std::min(CARS_PER_FERRY, (int) ferry_cvg.size());
+
+            for (int m (0); m < passengers_bvg; ++m) british_columbia[ferry_bvg[m]].setLocation(destinations[ferry_bvg[m]]);
+            ferry_bvg.erase(ferry_bvg.begin(), ferry_bvg.begin() + passengers_bvg);
+            for (int n (0); n < passengers_bgv; ++n) british_columbia[ferry_bgv[n]].setLocation(destinations[ferry_bgv[n]]);
+            ferry_bgv.erase(ferry_bgv.begin(), ferry_bgv.begin() + passengers_bgv);
+            for (int h (0); h < passengers_cgv; ++h) british_columbia[ferry_cgv[h]].setLocation(destinations[ferry_cgv[h]]);
+            ferry_cgv.erase(ferry_cgv.begin(), ferry_cgv.begin() + passengers_cgv);
+            for (int g (0); g < passengers_cvg; ++g) british_columbia[ferry_cvg[g]].setLocation(destinations[ferry_cvg[g]]);
+            ferry_cvg.erase(ferry_cvg.begin(), ferry_cvg.begin() + passengers_cvg);
         }
     }
     return 0;
