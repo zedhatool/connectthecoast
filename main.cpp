@@ -1,6 +1,7 @@
 #include <vector>
 #include <deque>
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <algorithm>
 #include <chrono> //for seeding PRNGs
@@ -79,15 +80,15 @@ public:
 /*
     Global constants
 */
-const int CARS_PER_FERRY (4); //how many cars each ferry takes
-const int BIKES_PER_FERRY (4); //how many bikes each ferry takes, these numbers are currently just placeholders
-const int FERRIES_PER_DAY (4);
 const float MODEL_SCALE (2.7); //the number of people per agent in the model
+const int CARS_PER_FERRY (311 / MODEL_SCALE); //how many cars each ferry takes
+const int BIKES_PER_FERRY (1000 / MODEL_SCALE); //how many bikes each ferry takes, these numbers are currently just placeholders
+const int FERRIES_PER_DAY (4);
 const double POPULATION_VANCOUVER (2.64e6); //scientific notation, 2.64e6 = 2.64*10^6 = 2.64 million
 const double POPULATION_SECHELT (1.0e4); //i want the extra precision of a double for these big numbers.
 const double POPULATION_GIBSONS (5.0e3);
 const double POPULATION_ROBERTSCREEK (3.0e3);
-char bike_path ('n'); //3 values: n for "none," r for "only to robert's creek," and s for "all the way to sechelt"
+char bike_path ('u'); //4 values: u for unset, n for "none," r for "only to robert's creek," and s for "all the way to sechelt"
 
 /*
     Randomness setup
@@ -197,6 +198,12 @@ int main() {
     float p_bike_if_lane;
     float p_always_bike (0.01);
 
+    std::cout << "How long does the bike path extend? Enter 'n' for no path, 'r' for Roberts Creek, and 's' for Sechelt. (The input is case-sensitive.)" <<std::endl;
+    std::cin >> bike_path;
+    while (bike_path != 'n' && bike_path != 'r' && bike_path != 's') {
+        std::cout << "Enter 'n' for no path, 'r' for Roberts Creek, and 's' for Sechelt. The input is case-sensitive." << std::endl;
+        std::cin >> bike_path;
+    }
     std::cout << "What proportion of people are willing to bike, if there is an available lane?" << std::endl;
     std::cout << "Enter the proportion as a decimal:" << std::endl;
     std::cin >> p_bike_if_lane;
@@ -231,6 +238,24 @@ int main() {
             }
         }
     }
+    /*
+        For ease of analysis and preservation, output the data to a file
+    */
+    std::ofstream outf("data.csv"); //TODO: have it programmatically generate a filename based on the date and time
+
+    if (!outf) {
+        std::cerr << "The file output failed." << std::endl;
+        return 1;
+    }
+
+    /*
+        Define the file data structure
+    */
+    outf << "Day,Car Trips to Coast,Bike Trips to Coast" <<std::endl; //we can add tracking for people leaving the coast as well
+    int car_trips_to_coast (0);
+    int bike_trips_to_coast (0);
+    int car_trips_to_van (0);
+    int bike_trips_to_van (0);
 
     /*
         Define ferry queues. These are all deque<int> so we can work with indices rather than
@@ -252,6 +277,7 @@ int main() {
 
     for (int t (0); t < t_max; ++t) { //main loop for the days of the year
         std::cout << "This is day " <<  t << std::endl;
+        outf << t << ",";
         if (t >= 151 && t <= 243) peak_season = true;
         else peak_season = false;
         // logic for putting agents in ferries goes here
@@ -291,7 +317,7 @@ int main() {
                     ferry_cgv.push_back(k);
                 }
             }
-            else if (british_columbia[k].isOnVacation() && trip_lengths[k] == 0) { //return home
+            else if (british_columbia[k].isOnVacation() && trip_lengths[k] <= 0) { //return home
                 if (british_columbia[k].getLocation() == 'v' && british_columbia[k].willBike() == 'y') {
                     ferry_bvg.push_back(k);
                 }
@@ -312,6 +338,10 @@ int main() {
                 else if (british_columbia[k].getLocation() != 'v' && british_columbia[k].willBike() == 'n') {
                     ferry_cgv.push_back(k);
                 }
+                else if (british_columbia[k].getLocation() != 'v' && british_columbia[k].willBike() == 'p'
+                    && bike_path == 'n') {
+                        ferry_cgv.push_back(k);
+                    }
                 else if (british_columbia[k].getLocation() == 's' && british_columbia[k].willBike() == 'p'
                     && bike_path == 's') {
                         ferry_bgv.push_back(k);
@@ -347,13 +377,18 @@ int main() {
 
             for (int m (0); m < passengers_bvg; ++m) british_columbia[ferry_bvg[m]].setLocation(destinations[ferry_bvg[m]]);
             ferry_bvg.erase(ferry_bvg.begin(), ferry_bvg.begin() + passengers_bvg);
+            bike_trips_to_coast += passengers_bvg;
             for (int n (0); n < passengers_bgv; ++n) british_columbia[ferry_bgv[n]].setLocation(destinations[ferry_bgv[n]]);
             ferry_bgv.erase(ferry_bgv.begin(), ferry_bgv.begin() + passengers_bgv);
+            bike_trips_to_van += passengers_bgv;
             for (int h (0); h < passengers_cgv; ++h) british_columbia[ferry_cgv[h]].setLocation(destinations[ferry_cgv[h]]);
             ferry_cgv.erase(ferry_cgv.begin(), ferry_cgv.begin() + passengers_cgv);
+            car_trips_to_van += passengers_cgv;
             for (int g (0); g < passengers_cvg; ++g) british_columbia[ferry_cvg[g]].setLocation(destinations[ferry_cvg[g]]);
             ferry_cvg.erase(ferry_cvg.begin(), ferry_cvg.begin() + passengers_cvg);
+            car_trips_to_coast += passengers_cvg;
         }
+        outf << car_trips_to_coast << "," << bike_trips_to_coast << std::endl;
     }
     return 0;
 }
