@@ -88,6 +88,7 @@ const double POPULATION_VANCOUVER (2.64e6); //scientific notation, 2.64e6 = 2.64
 const double POPULATION_SECHELT (1.0e4); //i want the extra precision of a double for these big numbers.
 const double POPULATION_GIBSONS (5.0e3);
 const double POPULATION_ROBERTSCREEK (3.0e3);
+const double TOTAL_POPULATION = POPULATION_SECHELT + POPULATION_GIBSONS + POPULATION_ROBERTSCREEK;
 char bike_path ('u'); //4 values: u for unset, n for "none," r for "only to robert's creek," and s for "all the way to sechelt"
 
 /*
@@ -133,12 +134,16 @@ void getTripLengths(std::vector<Agent>& world, std::vector<int>& trip_lengths, b
 /*
     Where will each Agent go on vacation?
 */
-std::uniform_int_distribution<> dis(0, 2);
+//std::uniform_int_distribution<> dis(0, 2);
+std::vector<int> subintervals = {0, 1, 2};
+std::vector<double> weights = {POPULATION_GIBSONS / TOTAL_POPULATION, POPULATION_ROBERTSCREEK / TOTAL_POPULATION,
+    POPULATION_SECHELT / TOTAL_POPULATION};
+std::piecewise_constant_distribution<> d(subintervals.begin(), subintervals.end(), weights.begin());
 void getDestinations(std::vector<Agent>& world, std::vector<char>& destinations) {
     for (int i (0); i < world.size(); ++i) {
         if (world[i].getHome() == 'v') {
-            if (dis(randomizer) == 0) destinations[i] = 'g';
-            else if (dis(randomizer) == 1) destinations[i] = 'r';
+            if (d(randomizer) == 0) destinations[i] = 'g';
+            else if (d(randomizer) == 1) destinations[i] = 'r';
             else destinations[i] = 's';
         }
         else {
